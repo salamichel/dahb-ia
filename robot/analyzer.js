@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from './config.js';
 import path from 'path';
+import { parseFilenameWithPatterns, detectDocTypeFromKeywords } from './pattern-matcher.js';
 
 // Initialisation de Gemini
 const genAI = new GoogleGenerativeAI(config.googleApiKey);
@@ -18,120 +19,13 @@ function detectDomain(text, filename) {
       combinedText.includes(kw.toLowerCase())
     ).length;
 
-    if (score > maxScore) {
+    if (maxScore < score) {
       maxScore = score;
       detectedDomain = domainName;
     }
   }
 
   return detectedDomain;
-}
-
-/**
- * Parse le nom de fichier selon différentes conventions de nommage
- * Supporte :
- * - Format standard : AP020_SETUP.docx, GL018_SFD.pdf
- * - Format EVO : EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire_CLOUD.docx
- * - Format libre : specification_fonctionnelle_GL018.pdf
- */
-function parseFilename(filename) {
-  const baseName = path.basename(filename, path.extname(filename));
-
-  // Pattern 1: Format EVO.FINA.XXX_TYPE_XXXX_Description
-  // Exemple: EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire_CLOUD
-  const evoPattern = /^(?:EVO\.)?(?:FINA\.)?(?:\d+_)?([A-Z]+)_(\d{3,4})_(.+)$/i;
-  const evoMatch = baseName.match(evoPattern);
-
-  if (evoMatch) {
-    const docType = evoMatch[1].toUpperCase(); // SET, SFD, STD
-    const componentId = evoMatch[2]; // 0549
-    const description = evoMatch[3].replace(/_/g, ' '); // Interface Référentiel Bancaire CLOUD
-
-    // Convertir les abréviations de type
-    const typeMap = {
-      'SET': 'SETUP',
-      'SFD': 'SFD',
-      'STD': 'STD',
-      'FN': 'FN',
-      'MOP': 'MOP'
-    };
-
-    return {
-      componentId,
-      componentName: description,
-      docType: typeMap[docType] || docType,
-      pattern: 'EVO'
-    };
-  }
-
-  // Pattern 2: Format standard AP020_SETUP, GL018_SFD
-  const standardPattern = /^([A-Z]{2,4}\d{2,4})_([A-Z]+)/i;
-  const standardMatch = baseName.match(standardPattern);
-
-  if (standardMatch) {
-    return {
-      componentId: standardMatch[1].toUpperCase(),
-      componentName: null, // Sera extrait du contenu par Gemini
-      docType: standardMatch[2].toUpperCase(),
-      pattern: 'STANDARD'
-    };
-  }
-
-  // Pattern 3: ID quelque part dans le nom (fallback)
-  const idPattern = /(\d{3,4})/;
-  const idMatch = baseName.match(idPattern);
-
-  if (idMatch) {
-    return {
-      componentId: idMatch[1],
-      componentName: baseName.replace(/_/g, ' '),
-      docType: null, // Sera détecté par mots-clés
-      pattern: 'NUMERIC_ID'
-    };
-  }
-
-  // Pattern 4: Ancien format avec lettres+chiffres
-  const legacyPattern = /([A-Z]{2,4}\d{2,4})/i;
-  const legacyMatch = baseName.match(legacyPattern);
-
-  if (legacyMatch) {
-    return {
-      componentId: legacyMatch[1].toUpperCase(),
-      componentName: null,
-      docType: null,
-      pattern: 'LEGACY'
-    };
-  }
-
-  // Aucun pattern reconnu : génère un ID
-  return {
-    componentId: baseName.substring(0, 10).toUpperCase().replace(/[^A-Z0-9]/g, ''),
-    componentName: baseName.replace(/_/g, ' '),
-    docType: null,
-    pattern: 'GENERATED'
-  };
-}
-
-/**
- * Détecte le type de document (SETUP, SFD, STD, etc.)
- */
-function detectDocumentType(text, filename, parsedFilename) {
-  // Si déjà détecté depuis le nom de fichier, on le garde
-  if (parsedFilename?.docType) {
-    return parsedFilename.docType;
-  }
-
-  const combinedText = (text + ' ' + filename).toLowerCase();
-
-  for (const [docType, keywords] of Object.entries(config.documentTypes)) {
-    for (const keyword of keywords) {
-      if (combinedText.includes(keyword.toLowerCase())) {
-        return docType;
-      }
-    }
-  }
-
-  return 'SFD'; // Par défaut
 }
 
 /**
@@ -145,7 +39,7 @@ Tu es un expert en analyse de documentation technique pour le domaine "${domain}
 Analyse le document fourni et retourne UNIQUEMENT un JSON valide (sans balises markdown).
 
 Champs requis :
-- "component_id": Identifiant du composant (cherche dans le texte des patterns comme AP020, GL018, etc.)
+- "component_id": Identifiant du composant (cherche dans le texte des patterns comme AP020, GL018, 0549, etc.)
 - "component_name": Nom descriptif du composant
 - "doc_type": "${docType}"
 - "domain": "${domain}"
@@ -179,6 +73,7 @@ Champs requis :
 
 /**
  * Analyse le contenu avec Gemini de manière adaptative
+ * Utilise le système de patterns configurables (naming-patterns.json)
  */
 export async function analyzeContent(text, filename) {
   if (!config.googleApiKey) {
@@ -186,18 +81,30 @@ export async function analyzeContent(text, filename) {
     return null;
   }
 
-  // Parse le nom de fichier selon différentes conventions
-  const parsed = parseFilename(filename);
+  // Parse le nom de fichier avec le système de patterns configurables
+  const parsed = await parseFilenameWithPatterns(filename);
+
   console.log(`📋 Fichier parsé: ID=${parsed.componentId}, Type=${parsed.docType || 'auto'}, Pattern=${parsed.pattern}`);
   if (parsed.componentName) {
     console.log(`   Nom extrait: ${parsed.componentName}`);
   }
+  if (parsed.linkedTo) {
+    console.log(`   🔗 Lié au composant: ${parsed.linkedTo.mainComponentId} (${parsed.linkedTo.linkType})`);
+  }
 
-  // Détection automatique du domaine et du type de document
+  // Détection automatique du domaine
   const domain = detectDomain(text, filename);
-  const docType = detectDocumentType(text, filename, parsed);
+
+  // Si le type n'est pas trouvé par pattern, on utilise les mots-clés
+  let docType = parsed.docType;
+  if (!docType) {
+    docType = await detectDocTypeFromKeywords(text, filename);
+    console.log(`   🔍 Type détecté par mots-clés: ${docType}`);
+  }
+
   const componentId = parsed.componentId;
   const componentName = parsed.componentName;
+  const linkedTo = parsed.linkedTo;
 
   console.log(`🎯 Domaine détecté: ${domain} | Type: ${docType} | ID: ${componentId}`);
 
@@ -232,6 +139,11 @@ export async function analyzeContent(text, filename) {
       analysis.component_name = componentName;
     }
 
+    // Ajoute les informations de liaison si présentes
+    if (linkedTo) {
+      analysis.linkedTo = linkedTo;
+    }
+
     return analysis;
   } catch (error) {
     console.error(`❌ Erreur Gemini:`, error.message);
@@ -248,6 +160,7 @@ export async function analyzeContent(text, filename) {
       cufParams: [],
       oracleTables: [],
       oicsIntegrations: [],
+      linkedTo: linkedTo || null,
       error: error.message
     };
   }
