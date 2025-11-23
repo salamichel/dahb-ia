@@ -24,6 +24,8 @@ import DependencyGraph from './components/DependencyGraph';
 import Scanner from './components/Scanner';
 import ComponentDetail from './components/ComponentDetail';
 import PatternManager from './components/PatternManager';
+import MetricsPanel from './components/MetricsPanel';
+import FilterPanel, { FilterCriteria } from './components/FilterPanel';
 import { generateAIResponse } from './services/geminiService';
 import { loadComponents, watchForUpdates } from './services/dataLoader';
 
@@ -230,7 +232,10 @@ const App = () => {
                     <h1 className="text-2xl font-bold text-slate-800">Dashboard Overview</h1>
                     <p className="text-slate-500 mt-1">Real-time insights into Oracle documentation coverage.</p>
                   </div>
-                  <DashboardStats components={components} />
+                  <MetricsPanel components={components} />
+                  <div className="mt-8">
+                    <DashboardStats components={components} />
+                  </div>
                   
                   <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-100 p-6">
                      <h3 className="text-lg font-semibold text-slate-800 mb-4">Recent Updates</h3>
@@ -393,30 +398,128 @@ interface ComponentsViewProps {
 }
 
 const ComponentsView = ({ components, onSelect }: ComponentsViewProps) => {
-  const [filter, setFilter] = useState('');
+  const [filters, setFilters] = useState<FilterCriteria>({
+    searchQuery: '',
+    module: 'all',
+    status: 'all',
+    dateRange: 'all',
+    hasCufParams: null,
+    hasIntegrations: null,
+  });
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'completion'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  const filtered = components.filter(c => 
-    c.name.toLowerCase().includes(filter.toLowerCase()) || 
-    c.id.toLowerCase().includes(filter.toLowerCase())
-  );
+  // Apply filters
+  const filtered = components.filter(c => {
+    // Search query
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      if (!c.name.toLowerCase().includes(query) && !c.id.toLowerCase().includes(query)) {
+        return false;
+      }
+    }
+
+    // Module filter
+    if (filters.module !== 'all' && !c.id.startsWith(filters.module)) {
+      return false;
+    }
+
+    // Status filter
+    if (filters.status !== 'all') {
+      const hasAllDocs = c.documents[DocType.SFD]?.uploaded &&
+        c.documents[DocType.STD]?.uploaded &&
+        c.documents[DocType.SETUP]?.uploaded;
+      const hasSomeDocs = c.documents[DocType.SFD]?.uploaded ||
+        c.documents[DocType.STD]?.uploaded ||
+        c.documents[DocType.SETUP]?.uploaded;
+
+      if (filters.status === 'complete' && !hasAllDocs) return false;
+      if (filters.status === 'partial' && (hasAllDocs || !hasSomeDocs)) return false;
+      if (filters.status === 'missing' && hasSomeDocs) return false;
+    }
+
+    // Date range filter
+    if (filters.dateRange !== 'all') {
+      const componentDate = new Date(c.lastIndexed);
+      const now = new Date();
+      const daysAgo = filters.dateRange === '7days' ? 7 : filters.dateRange === '30days' ? 30 : 90;
+      const cutoffDate = new Date(now.setDate(now.getDate() - daysAgo));
+      if (componentDate < cutoffDate) return false;
+    }
+
+    // CUF Params filter
+    if (filters.hasCufParams !== null) {
+      const hasCuf = c.cufParams.length > 0;
+      if (filters.hasCufParams !== hasCuf) return false;
+    }
+
+    // Integrations filter
+    if (filters.hasIntegrations !== null) {
+      const hasInt = c.oicsIntegrations.length > 0;
+      if (filters.hasIntegrations !== hasInt) return false;
+    }
+
+    return true;
+  });
+
+  // Apply sorting
+  const sorted = [...filtered].sort((a, b) => {
+    let comparison = 0;
+
+    if (sortBy === 'name') {
+      comparison = a.name.localeCompare(b.name);
+    } else if (sortBy === 'date') {
+      comparison = new Date(a.lastIndexed).getTime() - new Date(b.lastIndexed).getTime();
+    } else if (sortBy === 'completion') {
+      const getCompletionScore = (comp: OracleComponent) => {
+        let score = 0;
+        if (comp.documents[DocType.SFD]?.uploaded) score++;
+        if (comp.documents[DocType.STD]?.uploaded) score++;
+        if (comp.documents[DocType.SETUP]?.uploaded) score++;
+        return score;
+      };
+      comparison = getCompletionScore(a) - getCompletionScore(b);
+    }
+
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
 
   return (
     <div className="animate-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Component Library</h1>
-          <p className="text-slate-500 mt-1">Manage and view Oracle ERP components.</p>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800">Component Library</h1>
+        <p className="text-slate-500 mt-1">Manage and view Oracle ERP components.</p>
+      </div>
+
+      <FilterPanel filters={filters} onFilterChange={setFilters} components={components} />
+
+      {/* Sort Controls */}
+      <div className="flex items-center justify-between mb-4 bg-slate-50 px-4 py-3 rounded-lg border border-slate-100">
+        <div className="flex items-center space-x-2 text-sm text-slate-600">
+          <span className="font-medium">{sorted.length} composant(s) trouvé(s)</span>
         </div>
-        <input 
-          type="text" 
-          placeholder="Filter components..." 
-          className="border border-slate-200 rounded-lg px-4 py-2 text-sm w-full sm:w-64 focus:outline-none focus:border-blue-500"
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-slate-600">Trier par:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="name">Nom</option>
+            <option value="date">Date</option>
+            <option value="completion">Complétion</option>
+          </select>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            {sortOrder === 'asc' ? '↑' : '↓'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filtered.map(comp => (
+        {sorted.map(comp => (
           <div 
             key={comp.id} 
             onClick={() => onSelect(comp)}

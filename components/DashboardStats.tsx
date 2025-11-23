@@ -1,7 +1,8 @@
 import React from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  PieChart, Pie, Cell 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell,
+  LineChart, Line, Area, AreaChart
 } from 'recharts';
 import { OracleComponent, DocType } from '../types';
 import { FileText, Database, Code2, Layers } from 'lucide-react';
@@ -41,6 +42,15 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ components }) => {
   ];
   const COLORS = ['#10b981', '#f59e0b'];
 
+  // Données de tendances (simulation basée sur les dates d'indexation)
+  const timelineData = components
+    .sort((a, b) => new Date(a.lastIndexed).getTime() - new Date(b.lastIndexed).getTime())
+    .map((c, idx) => ({
+      date: new Date(c.lastIndexed).toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' }),
+      cumulative: idx + 1,
+      component: c.id
+    }));
+
   return (
     <div className="space-y-6">
       {/* Top Cards */}
@@ -49,6 +59,38 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ components }) => {
         <StatCard title="Total CUF Params" value={totalCUF} icon={<Code2 size={20} />} color="bg-indigo-500" />
         <StatCard title="Oracle Tables" value={totalTables} icon={<Database size={20} />} color="bg-emerald-500" />
         <StatCard title="OICS Integrations" value={totalOICS} icon={<FileText size={20} />} color="bg-orange-500" />
+      </div>
+
+      {/* Timeline Chart - NEW */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+        <h3 className="text-lg font-semibold text-slate-800 mb-4">Tendance d'indexation</h3>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={timelineData}>
+              <defs>
+                <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="date" tick={{fontSize: 11}} stroke="#94a3b8" />
+              <YAxis tick={{fontSize: 11}} stroke="#94a3b8" />
+              <Tooltip
+                contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+              />
+              <Area
+                type="monotone"
+                dataKey="cumulative"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#colorCumulative)"
+                name="Composants indexés"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Charts Row */}
@@ -62,7 +104,7 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({ components }) => {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="name" tick={{fontSize: 12}} stroke="#94a3b8" />
                 <YAxis hide />
-                <Tooltip 
+                <Tooltip
                     cursor={{fill: '#f8fafc'}}
                     contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
