@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Robot V2
+robot/node_modules
+robot/.env
+robot/documents/*
+!robot/documents/.gitkeep
+db_index.json

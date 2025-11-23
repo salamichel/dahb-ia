@@ -1,0 +1,23 @@
+{
+  "name": "dahb-ia-robot-v2",
+  "version": "2.0.0",
+  "description": "Intelligent document indexing robot with multi-domain support",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "init": "node init-database.js",
+    "test": "node test-sample.js"
+  },
+  "keywords": ["document-indexing", "gemini", "ai", "automation"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "chokidar": "^4.0.3",
+    "mammoth": "^1.9.0",
+    "dotenv": "^16.4.7",
+    "pdf-parse": "^1.1.1"
+  }
+}

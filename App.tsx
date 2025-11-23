@@ -24,6 +24,7 @@ import DependencyGraph from './components/DependencyGraph';
 import Scanner from './components/Scanner';
 import ComponentDetail from './components/ComponentDetail';
 import { generateAIResponse } from './services/geminiService';
+import { loadComponents, watchForUpdates } from './services/dataLoader';
 
 // --- Navigation Enum ---
 enum View {
@@ -39,6 +40,15 @@ const App = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [components, setComponents] = useState<OracleComponent[]>(MOCK_COMPONENTS);
   const [dependencies] = useState<Dependency[]>(MOCK_DEPENDENCIES);
+
+  // Load components from robot v2 on mount
+  useEffect(() => {
+    loadComponents().then(setComponents);
+
+    // Watch for updates from robot (poll every 5 seconds)
+    const cleanup = watchForUpdates(setComponents, 5000);
+    return cleanup;
+  }, []);
   
   // Selection State
   const [selectedComponent, setSelectedComponent] = useState<OracleComponent | null>(null);
