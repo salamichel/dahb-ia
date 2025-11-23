@@ -23,6 +23,7 @@ import DashboardStats from './components/DashboardStats';
 import DependencyGraph from './components/DependencyGraph';
 import Scanner from './components/Scanner';
 import ComponentDetail from './components/ComponentDetail';
+import PatternManager from './components/PatternManager';
 import { generateAIResponse } from './services/geminiService';
 import { loadComponents, watchForUpdates } from './services/dataLoader';
 
@@ -32,7 +33,8 @@ enum View {
   COMPONENTS = 'components',
   DEPENDENCIES = 'dependencies',
   SEARCH = 'search',
-  SCANNER = 'scanner'
+  SCANNER = 'scanner',
+  PATTERNS = 'patterns'
 }
 
 const App = () => {
@@ -146,11 +148,17 @@ const App = () => {
               active={currentView === View.SEARCH} 
               onClick={() => handleNavClick(View.SEARCH)} 
             />
-            <NavItem 
-              icon={<ScanLine size={20} />} 
-              label="Robot Scanner" 
-              active={currentView === View.SCANNER} 
-              onClick={() => handleNavClick(View.SCANNER)} 
+            <NavItem
+              icon={<ScanLine size={20} />}
+              label="Robot Scanner"
+              active={currentView === View.SCANNER}
+              onClick={() => handleNavClick(View.SCANNER)}
+            />
+            <NavItem
+              icon={<Settings size={20} />}
+              label="Patterns Config"
+              active={currentView === View.PATTERNS}
+              onClick={() => handleNavClick(View.PATTERNS)}
             />
           </nav>
 
@@ -276,6 +284,10 @@ const App = () => {
 
               {currentView === View.SCANNER && (
                 <Scanner onScanComplete={handleScanComplete} />
+              )}
+
+              {currentView === View.PATTERNS && (
+                <PatternManager />
               )}
             </>
           )}
