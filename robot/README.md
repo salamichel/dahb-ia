@@ -112,10 +112,20 @@ Le robot s'adapte automatiquement aux domaines suivants :
 ## 🔍 Détection automatique
 
 ### ID du composant
-Le robot extrait automatiquement l'ID depuis le nom du fichier :
-- `AP020_SETUP.docx` → ID: `AP020`
-- `GL018_spec_technique.pdf` → ID: `GL018`
-- `nouveau_process.docx` → ID: `NOUVEAU_PR` (généré)
+Le robot extrait automatiquement l'ID depuis le nom du fichier et supporte plusieurs conventions de nommage :
+
+**Format EVO (PTI Finance)** :
+- `EVO.FINA.001_SET_0549_Interface_Bancaire.docx` → ID: `0549`, Type: `SETUP`, Nom: `Interface Bancaire`
+- `EVO.FINA.001_SFD_0549_Interface_Bancaire.docx` → ID: `0549`, Type: `SFD`
+
+**Format Standard (Oracle ERP)** :
+- `AP020_SETUP.docx` → ID: `AP020`, Type: `SETUP`
+- `GL018_spec_technique.pdf` → ID: `GL018`, Type: `STD` (auto-détecté)
+
+**Format Libre** :
+- `specification_0549.pdf` → ID: `0549`, Type: auto-détecté
+
+📖 **Documentation complète** : Voir `NAMING_CONVENTIONS.md`
 
 ### Type de document
 Détection basée sur des mots-clés :

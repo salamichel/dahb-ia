@@ -35,7 +35,41 @@ npm start
    - Extraire les métadonnées
    - Sauvegarder dans `../metadata.json`
 
-## Exemple de fichier test
+## Exemples de fichiers test
+
+### Exemple 1 : Format EVO (PTI Finance)
+
+Créez un fichier `EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire.docx` avec ce contenu :
+
+```
+Interface Référentiel Bancaire Oracle Cloud
+============================================
+
+Composant: 0549 - Interface Référentiel Bancaire
+Type: SETUP
+Domaine: Oracle ERP Cloud - Cash Management
+
+Description:
+Interface permettant la synchronisation du référentiel bancaire
+entre le système source et Oracle Cloud.
+
+Paramètres CUF:
+- BANK_SYNC_FREQUENCY = DAILY
+- BANK_AUTO_CREATE = TRUE
+- BANK_VALIDATION_LEVEL = STRICT
+
+Tables Oracle utilisées:
+- CE_BANK_ACCOUNTS
+- CE_BANK_BRANCHES
+- CE_BANK_ACCT_USES_ALL
+
+Intégrations OICS:
+- FBDI_BANK_IMPORT
+- REST_BANK_ACCOUNTS_SYNC
+- SOAP_BANK_VALIDATION
+```
+
+### Exemple 2 : Format Standard Oracle
 
 Créez un fichier `AP020_SETUP.docx` avec ce contenu :
 

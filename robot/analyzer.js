@@ -28,9 +28,99 @@ function detectDomain(text, filename) {
 }
 
 /**
+ * Parse le nom de fichier selon différentes conventions de nommage
+ * Supporte :
+ * - Format standard : AP020_SETUP.docx, GL018_SFD.pdf
+ * - Format EVO : EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire_CLOUD.docx
+ * - Format libre : specification_fonctionnelle_GL018.pdf
+ */
+function parseFilename(filename) {
+  const baseName = path.basename(filename, path.extname(filename));
+
+  // Pattern 1: Format EVO.FINA.XXX_TYPE_XXXX_Description
+  // Exemple: EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire_CLOUD
+  const evoPattern = /^(?:EVO\.)?(?:FINA\.)?(?:\d+_)?([A-Z]+)_(\d{3,4})_(.+)$/i;
+  const evoMatch = baseName.match(evoPattern);
+
+  if (evoMatch) {
+    const docType = evoMatch[1].toUpperCase(); // SET, SFD, STD
+    const componentId = evoMatch[2]; // 0549
+    const description = evoMatch[3].replace(/_/g, ' '); // Interface Référentiel Bancaire CLOUD
+
+    // Convertir les abréviations de type
+    const typeMap = {
+      'SET': 'SETUP',
+      'SFD': 'SFD',
+      'STD': 'STD',
+      'FN': 'FN',
+      'MOP': 'MOP'
+    };
+
+    return {
+      componentId,
+      componentName: description,
+      docType: typeMap[docType] || docType,
+      pattern: 'EVO'
+    };
+  }
+
+  // Pattern 2: Format standard AP020_SETUP, GL018_SFD
+  const standardPattern = /^([A-Z]{2,4}\d{2,4})_([A-Z]+)/i;
+  const standardMatch = baseName.match(standardPattern);
+
+  if (standardMatch) {
+    return {
+      componentId: standardMatch[1].toUpperCase(),
+      componentName: null, // Sera extrait du contenu par Gemini
+      docType: standardMatch[2].toUpperCase(),
+      pattern: 'STANDARD'
+    };
+  }
+
+  // Pattern 3: ID quelque part dans le nom (fallback)
+  const idPattern = /(\d{3,4})/;
+  const idMatch = baseName.match(idPattern);
+
+  if (idMatch) {
+    return {
+      componentId: idMatch[1],
+      componentName: baseName.replace(/_/g, ' '),
+      docType: null, // Sera détecté par mots-clés
+      pattern: 'NUMERIC_ID'
+    };
+  }
+
+  // Pattern 4: Ancien format avec lettres+chiffres
+  const legacyPattern = /([A-Z]{2,4}\d{2,4})/i;
+  const legacyMatch = baseName.match(legacyPattern);
+
+  if (legacyMatch) {
+    return {
+      componentId: legacyMatch[1].toUpperCase(),
+      componentName: null,
+      docType: null,
+      pattern: 'LEGACY'
+    };
+  }
+
+  // Aucun pattern reconnu : génère un ID
+  return {
+    componentId: baseName.substring(0, 10).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+    componentName: baseName.replace(/_/g, ' '),
+    docType: null,
+    pattern: 'GENERATED'
+  };
+}
+
+/**
  * Détecte le type de document (SETUP, SFD, STD, etc.)
  */
-function detectDocumentType(text, filename) {
+function detectDocumentType(text, filename, parsedFilename) {
+  // Si déjà détecté depuis le nom de fichier, on le garde
+  if (parsedFilename?.docType) {
+    return parsedFilename.docType;
+  }
+
   const combinedText = (text + ' ' + filename).toLowerCase();
 
   for (const [docType, keywords] of Object.entries(config.documentTypes)) {
@@ -42,23 +132,6 @@ function detectDocumentType(text, filename) {
   }
 
   return 'SFD'; // Par défaut
-}
-
-/**
- * Extrait l'ID du composant depuis le nom du fichier
- * Exemples: "AP020_SETUP.docx" -> "AP020"
- *           "GL018_spec_fonctionnelle.pdf" -> "GL018"
- */
-function extractComponentId(filename) {
-  // Cherche un pattern comme AP020, GL018, etc.
-  const match = filename.match(/([A-Z]{2,4}\d{2,4})/i);
-  if (match) {
-    return match[1].toUpperCase();
-  }
-
-  // Si pas trouvé, génère un ID basé sur le nom du fichier
-  const baseName = path.basename(filename, path.extname(filename));
-  return baseName.substring(0, 10).toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
 /**
@@ -113,10 +186,18 @@ export async function analyzeContent(text, filename) {
     return null;
   }
 
+  // Parse le nom de fichier selon différentes conventions
+  const parsed = parseFilename(filename);
+  console.log(`📋 Fichier parsé: ID=${parsed.componentId}, Type=${parsed.docType || 'auto'}, Pattern=${parsed.pattern}`);
+  if (parsed.componentName) {
+    console.log(`   Nom extrait: ${parsed.componentName}`);
+  }
+
   // Détection automatique du domaine et du type de document
   const domain = detectDomain(text, filename);
-  const docType = detectDocumentType(text, filename);
-  const componentId = extractComponentId(filename);
+  const docType = detectDocumentType(text, filename, parsed);
+  const componentId = parsed.componentId;
+  const componentName = parsed.componentName;
 
   console.log(`🎯 Domaine détecté: ${domain} | Type: ${docType} | ID: ${componentId}`);
 
@@ -143,9 +224,12 @@ export async function analyzeContent(text, filename) {
     const cleanedResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const analysis = JSON.parse(cleanedResponse);
 
-    // Assure que l'ID est présent
+    // Assure que l'ID et le nom sont présents (utilise ceux extraits du filename)
     if (!analysis.component_id) {
       analysis.component_id = componentId;
+    }
+    if (!analysis.component_name && componentName) {
+      analysis.component_name = componentName;
     }
 
     return analysis;
@@ -155,7 +239,7 @@ export async function analyzeContent(text, filename) {
     // Fallback : retourne une structure minimale
     return {
       component_id: componentId,
-      component_name: path.basename(filename, path.extname(filename)),
+      component_name: componentName || path.basename(filename, path.extname(filename)),
       doc_type: docType,
       domain: domain,
       module: domain,
