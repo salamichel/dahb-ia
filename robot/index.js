@@ -21,6 +21,13 @@ const SUPPORTED_EXTENSIONS = ['.docx', '.pdf', '.txt'];
  */
 async function processFile(filePath) {
   const ext = path.extname(filePath).toLowerCase();
+  const filename = path.basename(filePath);
+
+  // Ignore les fichiers temporaires (Word, Excel, etc.)
+  if (filename.startsWith('~$')) {
+    console.log(`⏭️  Fichier temporaire ignoré: ${filename}`);
+    return;
+  }
 
   // Ignore les fichiers non supportés
   if (!SUPPORTED_EXTENSIONS.includes(ext)) {
@@ -30,7 +37,6 @@ async function processFile(filePath) {
   // Petite pause pour s'assurer que l'écriture du fichier est terminée (Windows lock)
   await new Promise(resolve => setTimeout(resolve, config.batchDelay));
 
-  const filename = path.basename(filePath);
   console.log(`\n📄 Détection: ${filename}`);
 
   try {
@@ -111,7 +117,10 @@ async function main() {
 
   const watcher = chokidar.watch(config.watchFolders, {
     persistent: true,
-    ignored: /(^|[\/\\])\../, // Ignore les fichiers cachés
+    ignored: [
+      /(^|[\/\\])\../, // Ignore les fichiers cachés
+      /^~\$/ // Ignore les fichiers temporaires (Word, Excel, etc.)
+    ],
     ignoreInitial: false, // Traite les fichiers existants au démarrage
     awaitWriteFinish: {
       stabilityThreshold: 2000,

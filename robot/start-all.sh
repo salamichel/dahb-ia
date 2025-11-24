@@ -64,10 +64,19 @@ node pattern-api.js &
 API_PID=$!
 sleep 2
 
+# Démarrage de l'API Upload
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "2️⃣  API Upload (port 3002)..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+node upload-api.js &
+UPLOAD_PID=$!
+sleep 2
+
 # Démarrage du robot d'indexation
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "2️⃣  Robot d'indexation..."
+echo "3️⃣  Robot d'indexation..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 node index.js &
 ROBOT_PID=$!
@@ -76,7 +85,7 @@ sleep 2
 # Démarrage de l'interface web (depuis le dossier parent)
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "3️⃣  Interface web (port 5173)..."
+echo "4️⃣  Interface web (port 5173)..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 cd ..
 npm run dev &
@@ -89,9 +98,11 @@ echo "╠═══════════════════════�
 echo "║                                                       ║"
 echo "║  📊 Interface Web:    http://localhost:5173          ║"
 echo "║  🔧 API Patterns:     http://localhost:3001          ║"
+echo "║  📤 API Upload:       http://localhost:3002          ║"
 echo "║  🤖 Robot:            Actif (surveillant ./documents)║"
 echo "║                                                       ║"
-echo "║  📁 Déposez vos fichiers dans: robot/documents/      ║"
+echo "║  📁 Upload via interface: Robot Scanner (menu)       ║"
+echo "║     ou déposez dans: robot/documents/                ║"
 echo "║                                                       ║"
 echo "║  ⚙️  Gérer les patterns:                              ║"
 echo "║     → Interface: Patterns Config (menu)              ║"

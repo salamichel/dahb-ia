@@ -11,7 +11,9 @@
     "test": "node test-patterns.js",
     "test-patterns": "node test-patterns.js",
     "api": "node pattern-api.js",
-    "dev:api": "node --watch pattern-api.js"
+    "dev:api": "node --watch pattern-api.js",
+    "upload": "node upload-api.js",
+    "dev:upload": "node --watch upload-api.js"
   },
   "keywords": ["document-indexing", "gemini", "ai", "automation"],
   "author": "",
@@ -24,6 +26,7 @@
     "pdf-parse": "^1.1.1",
     "fs-extra": "^11.2.0",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1"
   }
 }
