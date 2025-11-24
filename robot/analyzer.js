@@ -35,7 +35,15 @@ function detectDomain(text, filename) {
 function buildMultiAspectPrompt(docType, filename) {
   return `
 Tu es un expert en analyse de documentation technique multi-domaine.
-Analyse le document fourni et retourne UNIQUEMENT un JSON valide (sans balises markdown).
+
+RÈGLES STRICTES:
+1. Retourne UNIQUEMENT un objet JSON valide
+2. PAS de texte avant ou après le JSON
+3. PAS de balises markdown (\`\`\`json)
+4. PAS de virgules en fin de tableau ou d'objet
+5. PAS de commentaires dans le JSON
+6. Utilise UNIQUEMENT des guillemets doubles pour les clés et valeurs
+7. Assure-toi que TOUTES les accolades et crochets sont correctement fermés
 
 IMPORTANT: Un composant peut avoir PLUSIEURS ASPECTS techniques (Oracle ERP, BI Publisher, ETL, SaaS, etc.)
 Tu dois identifier TOUS les aspects présents dans le document.
@@ -169,6 +177,7 @@ export async function analyzeContent(text, filename) {
     generationConfig: {
       temperature: 0,
       maxOutputTokens: 8192,
+      responseMimeType: 'application/json',  // Force JSON valide
     }
   });
 
@@ -183,9 +192,47 @@ export async function analyzeContent(text, filename) {
     const result = await model.generateContent(fullPrompt);
     const response = result.response.text();
 
-    // Nettoie la réponse (enlève les éventuelles balises markdown)
-    const cleanedResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const analysis = JSON.parse(cleanedResponse);
+    // Nettoie la réponse (enlève les éventuelles balises markdown et texte superflu)
+    let cleanedResponse = response.trim();
+
+    // Enlève les balises markdown
+    cleanedResponse = cleanedResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+
+    // Extrait uniquement le JSON (entre première { et dernière })
+    const firstBrace = cleanedResponse.indexOf('{');
+    const lastBrace = cleanedResponse.lastIndexOf('}');
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error('Pas de JSON valide trouvé dans la réponse Gemini');
+    }
+
+    cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+
+    // Parse le JSON avec gestion d'erreur améliorée
+    let analysis;
+    try {
+      analysis = JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      // Si le parsing échoue, essaye de nettoyer les virgules en trop et les trailing commas
+      console.warn(`⚠️  JSON malformé, tentative de réparation...`);
+
+      // Enlève les trailing commas
+      const fixedJson = cleanedResponse
+        .replace(/,\s*}/g, '}')  // Virgule avant }
+        .replace(/,\s*]/g, ']')  // Virgule avant ]
+        .replace(/\n/g, ' ')     // Remplace les retours à la ligne
+        .replace(/\r/g, '');     // Remplace les retours chariot
+
+      try {
+        analysis = JSON.parse(fixedJson);
+        console.log(`✅ JSON réparé avec succès`);
+      } catch (secondError) {
+        console.error(`❌ Impossible de parser le JSON même après nettoyage`);
+        console.error(`Position de l'erreur: ${secondError.message}`);
+        console.error(`Extrait du JSON: ${cleanedResponse.substring(0, 500)}...`);
+        throw secondError;
+      }
+    }
 
     // Assure que l'ID et le nom sont présents (utilise ceux extraits du filename)
     if (!analysis.component_id) {
@@ -194,6 +241,9 @@ export async function analyzeContent(text, filename) {
     if (!analysis.component_name && componentName) {
       analysis.component_name = componentName;
     }
+
+    // Ajoute le domaine détecté
+    analysis.domain = domain;
 
     // Ajoute les informations de liaison si présentes
     if (linkedTo) {
@@ -211,6 +261,8 @@ export async function analyzeContent(text, filename) {
       }
     }
 
+    console.log(`✅ Analyse terminée - Domaine: ${analysis.domain}`);
+
     return analysis;
   } catch (error) {
     console.error(`❌ Erreur Gemini:`, error.message);
@@ -220,6 +272,7 @@ export async function analyzeContent(text, filename) {
       component_id: componentId,
       component_name: componentName || path.basename(filename, path.extname(filename)),
       doc_type: docType,
+      domain: domain || 'General',
       summary: 'Analyse automatique impossible - document indexé avec métadonnées minimales',
       keywords: [],
       aspects: {},
