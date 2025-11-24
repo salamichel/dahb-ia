@@ -23,9 +23,11 @@ import DashboardStats from './components/DashboardStats';
 import DependencyGraph from './components/DependencyGraph';
 import Scanner from './components/Scanner';
 import ComponentDetail from './components/ComponentDetail';
+import PatternManager from './components/PatternManager';
 import MetricsPanel from './components/MetricsPanel';
 import FilterPanel, { FilterCriteria } from './components/FilterPanel';
 import { generateAIResponse } from './services/geminiService';
+import { loadComponents, watchForUpdates } from './services/dataLoader';
 
 // --- Navigation Enum ---
 enum View {
@@ -33,7 +35,8 @@ enum View {
   COMPONENTS = 'components',
   DEPENDENCIES = 'dependencies',
   SEARCH = 'search',
-  SCANNER = 'scanner'
+  SCANNER = 'scanner',
+  PATTERNS = 'patterns'
 }
 
 const App = () => {
@@ -41,6 +44,15 @@ const App = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [components, setComponents] = useState<OracleComponent[]>(MOCK_COMPONENTS);
   const [dependencies] = useState<Dependency[]>(MOCK_DEPENDENCIES);
+
+  // Load components from robot v2 on mount
+  useEffect(() => {
+    loadComponents().then(setComponents);
+
+    // Watch for updates from robot (poll every 5 seconds)
+    const cleanup = watchForUpdates(setComponents, 5000);
+    return cleanup;
+  }, []);
   
   // Selection State
   const [selectedComponent, setSelectedComponent] = useState<OracleComponent | null>(null);
@@ -138,11 +150,17 @@ const App = () => {
               active={currentView === View.SEARCH} 
               onClick={() => handleNavClick(View.SEARCH)} 
             />
-            <NavItem 
-              icon={<ScanLine size={20} />} 
-              label="Robot Scanner" 
-              active={currentView === View.SCANNER} 
-              onClick={() => handleNavClick(View.SCANNER)} 
+            <NavItem
+              icon={<ScanLine size={20} />}
+              label="Robot Scanner"
+              active={currentView === View.SCANNER}
+              onClick={() => handleNavClick(View.SCANNER)}
+            />
+            <NavItem
+              icon={<Settings size={20} />}
+              label="Patterns Config"
+              active={currentView === View.PATTERNS}
+              onClick={() => handleNavClick(View.PATTERNS)}
             />
           </nav>
 
@@ -272,6 +290,10 @@ const App = () => {
               {currentView === View.SCANNER && (
                 <Scanner onScanComplete={handleScanComplete} />
               )}
+
+              {currentView === View.PATTERNS && (
+                <PatternManager />
+              )}
             </>
           )}
         </div>
@@ -387,6 +409,36 @@ const ComponentsView = ({ components, onSelect }: ComponentsViewProps) => {
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'completion'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
+  // Helper pour compter les CUF params (legacy + aspects)
+  const getCufParamsCount = (comp: OracleComponent) => {
+    let count = comp.cufParams?.length || 0;
+    // Ajoute les params des aspects
+    if (comp.aspects?.['Oracle ERP Cloud']?.cufParams) {
+      count += comp.aspects['Oracle ERP Cloud'].cufParams.length;
+    }
+    return count;
+  };
+
+  // Helper pour compter les tables Oracle (legacy + aspects)
+  const getTablesCount = (comp: OracleComponent) => {
+    let tables = new Set([...(comp.oracleTables || [])]);
+    // Ajoute les tables des aspects
+    if (comp.aspects?.['Oracle ERP Cloud']?.oracleTables) {
+      comp.aspects['Oracle ERP Cloud'].oracleTables.forEach(t => tables.add(t));
+    }
+    return tables.size;
+  };
+
+  // Helper pour compter les intégrations (legacy + aspects)
+  const getIntegrationsCount = (comp: OracleComponent) => {
+    let count = comp.oicsIntegrations?.length || 0;
+    // Ajoute les intégrations des aspects
+    if (comp.aspects?.['Oracle ERP Cloud']?.oicsIntegrations) {
+      count += comp.aspects['Oracle ERP Cloud'].oicsIntegrations.length;
+    }
+    return count;
+  };
+
   // Apply filters
   const filtered = components.filter(c => {
     // Search query
@@ -496,54 +548,113 @@ const ComponentsView = ({ components, onSelect }: ComponentsViewProps) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {sorted.map(comp => (
-          <div 
-            key={comp.id} 
-            onClick={() => onSelect(comp)}
-            className="bg-white border border-slate-200 rounded-xl p-5 hover:shadow-lg transition-all cursor-pointer group hover:-translate-y-1"
-          >
-             <div className="flex justify-between items-start mb-4">
-               <div className="flex items-center space-x-3">
-                 <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-700 font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                   {comp.id.substring(0, 2)}
-                 </div>
-                 <div>
-                   <h3 className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{comp.id}</h3>
-                   <p className="text-xs text-slate-500 truncate max-w-[150px]">{comp.name}</p>
-                 </div>
-               </div>
-               <ArrowUpRight size={16} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-             </div>
-             
-             {comp.summary && (
-                <div className="mb-3 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 italic line-clamp-2">
-                    {comp.summary}
-                </div>
-             )}
-             
-             <div className="space-y-3">
-                <div className="flex justify-between text-sm border-b border-slate-50 pb-2">
-                   <span className="text-slate-500">CUF Params</span>
-                   <span className="font-semibold text-slate-700">{comp.cufParams.length}</span>
-                </div>
-                <div className="flex justify-between text-sm border-b border-slate-50 pb-2">
-                   <span className="text-slate-500">Tables</span>
-                   <span className="font-semibold text-slate-700">{comp.oracleTables.length}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                   <span className="text-slate-500">Integrations</span>
-                   <span className="font-semibold text-slate-700">{comp.oicsIntegrations.length}</span>
-                </div>
-             </div>
-
-             <div className="mt-5 flex gap-2 pt-4 border-t border-slate-100">
-                 <StatusDot active={comp.documents[DocType.SFD]?.uploaded} label="SFD" />
-                 <StatusDot active={comp.documents[DocType.STD]?.uploaded} label="STD" />
-                 <StatusDot active={comp.documents[DocType.SETUP]?.uploaded} label="SET" />
-             </div>
-          </div>
-        ))}
+      {/* Tableau des composants */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Composant
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Nom
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                CUF Params
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Tables
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Intégrations
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Documents
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Dernière MAJ
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sorted.map(comp => (
+              <tr
+                key={comp.id}
+                className="hover:bg-slate-50 transition-colors cursor-pointer"
+                onClick={() => onSelect(comp)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
+                      {comp.id.substring(0, 2)}
+                    </div>
+                    <div className="ml-3">
+                      <div className="text-sm font-bold text-slate-900">{comp.id}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm text-slate-900 max-w-xs truncate">{comp.name}</div>
+                  {comp.summary && (
+                    <div className="text-xs text-slate-500 max-w-xs truncate">{comp.summary}</div>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    getCufParamsCount(comp) > 0
+                      ? 'bg-indigo-100 text-indigo-800'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {getCufParamsCount(comp)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    getTablesCount(comp) > 0
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {getTablesCount(comp)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    getIntegrationsCount(comp) > 0
+                      ? 'bg-orange-100 text-orange-800'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {getIntegrationsCount(comp)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex justify-center gap-1">
+                    <StatusDot active={comp.documents[DocType.SFD]?.uploaded} label="SFD" />
+                    <StatusDot active={comp.documents[DocType.STD]?.uploaded} label="STD" />
+                    <StatusDot active={comp.documents[DocType.SETUP]?.uploaded} label="SET" />
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-slate-500">
+                  {new Date(comp.lastIndexed).toLocaleDateString()}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(comp);
+                    }}
+                    className="text-blue-600 hover:text-blue-900 flex items-center gap-1 ml-auto"
+                  >
+                    Détails
+                    <ArrowUpRight size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

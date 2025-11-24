@@ -1,0 +1,130 @@
+{
+  "patterns": [
+    {
+      "name": "EVO.FINA - Standard PTI Finance",
+      "enabled": true,
+      "regex": "^(?:EVO\\.)?(?:FINA\\.)?(?:\\d+_)?([A-Z]+)_(\\d{3,4})_(.+)$",
+      "groups": {
+        "docType": 1,
+        "componentId": 2,
+        "componentName": 3
+      },
+      "typeMapping": {
+        "SET": "SETUP",
+        "SFD": "SFD",
+        "STD": "STD",
+        "FN": "FN",
+        "MOP": "MOP"
+      },
+      "examples": [
+        "EVO.FINA.001_SET_0549_Interface_Référentiel_Bancaire.docx",
+        "FINA.001_SFD_0549_Interface_Bancaire.docx"
+      ]
+    },
+    {
+      "name": "INI.FIN.FDJ - Finance FDJ Initiative",
+      "enabled": true,
+      "regex": "^(?:INI\\.)?(?:FIN\\.)?(?:FDJ\\.)?(?:\\d+_)?([A-Z]+)_(\\d{3,4})_(.+)$",
+      "groups": {
+        "docType": 1,
+        "componentId": 2,
+        "componentName": 3
+      },
+      "typeMapping": {
+        "SET": "SETUP",
+        "SFD": "SFD",
+        "STD": "STD",
+        "FN": "FN",
+        "MOP": "MOP"
+      },
+      "examples": [
+        "INI.FIN.FDJ.001_SFD_0586_Calcul_Points_Controle_NRM.docx"
+      ]
+    },
+    {
+      "name": "Type-first format (MOP, FN, etc.)",
+      "enabled": true,
+      "regex": "^([A-Z]+)_(.+?)_([A-Z]{2}\\d{2,4})$",
+      "groups": {
+        "docType": 1,
+        "componentName": 2,
+        "componentId": 3
+      },
+      "typeMapping": {
+        "MOP": "MOP",
+        "FN": "FN",
+        "INSTALL": "MOP",
+        "INSTALLATION": "MOP"
+      },
+      "examples": [
+        "MOP_Installation_OIC_FDJ_AP015.docx",
+        "FN_Fiche_Technique_GL018.pdf"
+      ],
+      "notes": "Format où le type de document vient en premier"
+    },
+    {
+      "name": "Standard Oracle ERP",
+      "enabled": true,
+      "regex": "^([A-Z]{2,4}\\d{2,4})_([A-Z]+)",
+      "groups": {
+        "componentId": 1,
+        "docType": 2
+      },
+      "typeMapping": {
+        "SETUP": "SETUP",
+        "SFD": "SFD",
+        "STD": "STD"
+      },
+      "examples": [
+        "AP020_SETUP.docx",
+        "GL018_SFD.pdf"
+      ]
+    },
+    {
+      "name": "Numeric ID fallback",
+      "enabled": true,
+      "regex": "(\\d{3,4})",
+      "groups": {
+        "componentId": 1
+      },
+      "priority": -1,
+      "notes": "Fallback : cherche juste un ID numérique"
+    }
+  ],
+
+  "relationships": {
+    "description": "Permet de lier des fichiers annexes à un composant principal",
+    "rules": [
+      {
+        "name": "MOP liés aux composants",
+        "pattern": "MOP_.+_(AP\\d{3,4}|GL\\d{3,4}|AR\\d{3,4})",
+        "action": "link_to_component",
+        "extractMainId": 1,
+        "comment": "Les fichiers MOP sont liés au composant Oracle mentionné dans le nom"
+      },
+      {
+        "name": "Documents annexes avec référence",
+        "pattern": "_REF_(\\d{4})",
+        "action": "link_to_component",
+        "extractMainId": 1,
+        "comment": "Fichiers contenant _REF_0549 sont liés au composant 0549"
+      }
+    ]
+  },
+
+  "docTypeKeywords": {
+    "SETUP": ["setup", "config", "configuration", "paramétrage", "param", "set"],
+    "SFD": ["sfd", "spec fonctionnelle", "fonctionnelle", "functional"],
+    "STD": ["std", "spec technique", "technique", "technical"],
+    "FN": ["fn", "fiche", "note"],
+    "MOP": ["mop", "installation", "deploy", "déploiement", "install"]
+  },
+
+  "globalSettings": {
+    "caseInsensitive": true,
+    "cleanUnderscores": true,
+    "cleanDashes": false,
+    "fallbackToNumericId": true,
+    "generateIdIfNotFound": true
+  }
+}

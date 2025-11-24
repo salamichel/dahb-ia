@@ -1,8 +1,8 @@
 
-# Dahb IA - Oracle ERP Intelligent Documentation Platform
+# Dahb IA - Multi-Domain Intelligent Documentation Platform
 
 ## 1. Overview
-Dahb IA is a modern React application designed to centralize, analyze, and visualize technical documentation for Oracle ERP Cloud implementations. It solves the problem of dispersed documents (SFD, STD, SETUP, etc.) by indexing them into a searchable knowledge base.
+Dahb IA is a modern platform combining a React visualization interface and an intelligent document indexing robot. Originally designed for Oracle ERP Cloud, it now supports multiple business domains (Delphes, RBM-NRM, BI Publisher, ETL, IBM Cotre, Tradeshift, C2FO, Abacus). It solves the problem of dispersed technical documents (SFD, STD, SETUP, etc.) by automatically indexing them into a searchable knowledge base using AI.
 
 ## 2. Key Features
 
@@ -14,16 +14,64 @@ Dahb IA is a modern React application designed to centralize, analyze, and visua
 - Interactive D3.js graph showing relationships between components (ControlM jobs).
 - Visualizes prerequisites and data flow between modules (e.g., AP -> GL).
 
-### 🤖 Intelligent Robot Scanner
-- **Smart Cataloging**: Automatically identifies Component ID and Document Type, even without strict naming conventions.
-- **AI Inference**: Analyzes filenames and simulates content analysis to categorize files (e.g., detecting "param" keywords for SETUP documents).
-- **Metadata Extraction**: Simulates extracting CUF params and Tables from unstructured content.
+### 🤖 Robot V2 - Automatic Document Indexing
+- **Real-time Monitoring**: Watches configured folders and automatically processes new/modified documents
+- **Multi-format Support**: DOCX, PDF, and TXT files
+- **AI-Powered Analysis**: Uses Gemini 1.5 Flash to extract metadata, parameters, integrations, and technical elements
+- **Multi-domain Detection**: Automatically identifies the business domain and adapts extraction accordingly
+- **Idempotent Processing**: Uses SHA-256 hashing to avoid reprocessing unchanged files
+- **Smart Integration**: Seamlessly merges data with the web interface in real-time
 
 ### 🧠 AI Assistant
 - Integrated **Gemini 2.5 Flash** chat interface.
 - Context-aware answers based on the indexed component data (RAG simulation).
 
-## 3. How to Use the Scanner
+## 3. Quick Start
+
+### Frontend Interface
+```bash
+npm install
+npm run dev
+```
+Open http://localhost:5173
+
+### Robot V2 (Automatic Indexing)
+
+**Full documentation**: See `robot/README.md` and `robot/QUICKSTART.md`
+
+```bash
+cd robot
+npm install
+
+# Initialize database
+npm run init
+
+# Configure API key in .env
+# GOOGLE_API_KEY=your_key_here
+
+# Start the robot
+npm start
+```
+
+The robot will:
+1. Watch the configured folders (default: `./documents/`)
+2. Automatically process DOCX, PDF, and TXT files
+3. Extract metadata with Gemini AI
+4. Save to `metadata.json` (consumed by the web interface)
+5. Update in real-time as files change
+
+### Supported Domains
+- **Oracle ERP Cloud**: GL, AP, AR, PO, OM, HCM, FA
+- **Delphes-OeBS**: Legacy E-Business Suite
+- **RBM-NRM**: Natural Resource Management
+- **BI Publisher**: Reports and data models
+- **ETL SI Finance**: ODI/OIC integrations
+- **IBM Cotre**: Cognos solutions
+- **Tradeshift**: Supplier network
+- **C2FO**: Working capital optimization
+- **Abacus**: Abajus system
+
+## 4. How to Use the Scanner
 
 The **Robot Scanner** is now enhanced with AI simulation capabilities to handle unstructured inputs.
 
@@ -41,8 +89,18 @@ The **Robot Scanner** is now enhanced with AI simulation capabilities to handle 
     *   Files classified as `SETUP` will trigger simulated extraction of **CUF Parameters**.
     *   Files classified as `STD` will trigger simulated extraction of **Oracle Tables**.
 
-## 4. Technical Stack
+## 5. Technical Stack
 
-*   **Frontend**: React 18, TypeScript, Tailwind CSS
+### Frontend
+*   **Framework**: React 19, TypeScript
+*   **Styling**: Tailwind CSS (inline)
 *   **Visualization**: D3.js (Graph), Recharts (Charts)
-*   **AI**: Google Gemini 2.5 Flash (via @google/genai)
+*   **Icons**: Lucide React
+*   **Build**: Vite
+
+### Robot V2
+*   **Runtime**: Node.js (ES Modules)
+*   **AI**: Google Gemini 1.5 Flash (via @google/generative-ai)
+*   **File Watching**: Chokidar
+*   **Document Parsing**: Mammoth (DOCX), pdf-parse (PDF)
+*   **Data Storage**: JSON (compatible with frontend)
