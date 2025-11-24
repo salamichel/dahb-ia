@@ -36,16 +36,17 @@ export async function saveDatabase(db) {
 
 /**
  * Transforme l'analyse Gemini au format compatible avec l'interface React
+ * Supporte maintenant la structure multi-aspect
  */
 function transformToComponentFormat(analysis, filePath, hash) {
   const filename = path.basename(filePath);
   const ext = path.extname(filePath).toLowerCase();
 
-  return {
+  // Structure de base du composant
+  const component = {
     id: analysis.component_id,
     name: analysis.component_name || analysis.component_id,
     summary: analysis.summary || '',
-    domain: analysis.domain || 'General',
     documents: {
       [analysis.doc_type]: {
         type: analysis.doc_type,
@@ -55,17 +56,94 @@ function transformToComponentFormat(analysis, filePath, hash) {
         fileHash: hash
       }
     },
+    keywords: analysis.keywords || [],
+    lastIndexed: new Date().toISOString(),
+    aiModel: 'gemini-1.5-flash',
+
+    // Structure multi-aspect (nouvelle)
+    aspects: analysis.aspects || {},
+
+    // Legacy fields pour compatibilité backward (si pas d'aspects)
     cufParams: analysis.cufParams || [],
     oracleTables: analysis.oracleTables || [],
     oicsIntegrations: analysis.oicsIntegrations || [],
-    keywords: analysis.keywords || [],
-    module: analysis.module || analysis.domain,
-    lastIndexed: new Date().toISOString(),
-    aiModel: 'gemini-1.5-flash',
+    domain: analysis.domain,
+    module: analysis.module,
+
     _metadata: {
       originalAnalysis: analysis
     }
   };
+
+  return component;
+}
+
+/**
+ * Merge intelligemment deux structures d'aspects
+ * Combine les données de plusieurs documents pour un même composant
+ */
+function mergeAspects(existingAspects, newAspects) {
+  const merged = { ...existingAspects };
+
+  for (const [aspectName, newData] of Object.entries(newAspects)) {
+    if (!newData.detected) {
+      // Si le nouvel aspect n'est pas détecté, on garde l'ancien (s'il existe)
+      continue;
+    }
+
+    if (!merged[aspectName] || !merged[aspectName].detected) {
+      // Premier aspect détecté de ce type, on l'ajoute
+      merged[aspectName] = newData;
+    } else {
+      // Aspect déjà existant : on merge les tableaux
+      const existingData = merged[aspectName];
+
+      merged[aspectName] = {
+        ...existingData,
+        ...newData,
+        detected: true,
+
+        // Merge des tableaux selon le type d'aspect
+        ...(newData.cufParams && {
+          cufParams: [...(existingData.cufParams || []), ...(newData.cufParams || [])]
+        }),
+        ...(newData.oracleTables && {
+          oracleTables: [...new Set([...(existingData.oracleTables || []), ...(newData.oracleTables || [])])]
+        }),
+        ...(newData.oicsIntegrations && {
+          oicsIntegrations: [...new Set([...(existingData.oicsIntegrations || []), ...(newData.oicsIntegrations || [])])]
+        }),
+        ...(newData.reports && {
+          reports: [...(existingData.reports || []), ...(newData.reports || [])]
+        }),
+        ...(newData.dataModels && {
+          dataModels: [...(existingData.dataModels || []), ...(newData.dataModels || [])]
+        }),
+        ...(newData.mappings && {
+          mappings: [...(existingData.mappings || []), ...(newData.mappings || [])]
+        }),
+        ...(newData.transformations && {
+          transformations: [...(existingData.transformations || []), ...(newData.transformations || [])]
+        }),
+        ...(newData.schedules && {
+          schedules: [...(existingData.schedules || []), ...(newData.schedules || [])]
+        }),
+        ...(newData.apiEndpoints && {
+          apiEndpoints: [...(existingData.apiEndpoints || []), ...(newData.apiEndpoints || [])]
+        }),
+        ...(newData.workflows && {
+          workflows: [...(existingData.workflows || []), ...(newData.workflows || [])]
+        }),
+
+        // Combine les notes (append)
+        ...(newData.notes && existingData.notes && {
+          notes: `${existingData.notes}\n\n${newData.notes}`
+        })
+      };
+    }
+  }
+
+  return merged;
 }
 
 /**
@@ -96,6 +174,9 @@ export async function upsertDocument(filePath, analysis, hash) {
 
     console.log(`♻️  Mise à jour du composant: ${componentData.id}`);
 
+    // Merge intelligent des aspects
+    const mergedAspects = mergeAspects(existing.aspects || {}, componentData.aspects || {});
+
     // Merge des documents
     db.components[existingIndex] = {
       ...existing,
@@ -104,7 +185,10 @@ export async function upsertDocument(filePath, analysis, hash) {
         ...existing.documents,
         ...componentData.documents
       },
-      // Merge des arrays sans doublons
+      // Merge des aspects (nouvelle structure)
+      aspects: mergedAspects,
+
+      // Merge des legacy fields (compatibilité backward)
       cufParams: [...new Set([...(existing.cufParams || []), ...(componentData.cufParams || [])])],
       oracleTables: [...new Set([...(existing.oracleTables || []), ...(componentData.oracleTables || [])])],
       oicsIntegrations: [...new Set([...(existing.oicsIntegrations || []), ...(componentData.oicsIntegrations || [])])],

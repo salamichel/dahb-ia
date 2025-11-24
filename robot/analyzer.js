@@ -29,46 +29,101 @@ function detectDomain(text, filename) {
 }
 
 /**
- * Construit le prompt Gemini adapté au domaine détecté
+ * Construit le prompt Gemini pour extraction multi-aspect
+ * Un document peut contenir plusieurs aspects (Oracle ERP + BI Publisher + ETL, etc.)
  */
-function buildGeminiPrompt(domain, docType, filename) {
-  const domainConfig = config.domains[domain] || config.domains['Oracle ERP Cloud'];
-
-  const basePrompt = `
-Tu es un expert en analyse de documentation technique pour le domaine "${domain}".
+function buildMultiAspectPrompt(docType, filename) {
+  return `
+Tu es un expert en analyse de documentation technique multi-domaine.
 Analyse le document fourni et retourne UNIQUEMENT un JSON valide (sans balises markdown).
 
-Champs requis :
-- "component_id": Identifiant du composant (cherche dans le texte des patterns comme AP020, GL018, 0549, etc.)
-- "component_name": Nom descriptif du composant
-- "doc_type": "${docType}"
-- "domain": "${domain}"
-- "module": Module principal parmi ${JSON.stringify(domainConfig.modules)}
-- "summary": Résumé exécutif en 2-3 phrases
-- "keywords": Liste de 10 mots-clés techniques précis
-`;
+IMPORTANT: Un composant peut avoir PLUSIEURS ASPECTS techniques (Oracle ERP, BI Publisher, ETL, SaaS, etc.)
+Tu dois identifier TOUS les aspects présents dans le document.
 
-  // Ajout de champs spécifiques selon le domaine
-  const specificFields = domainConfig.extractFields.map(field => {
-    switch (field) {
-      case 'setup_elements':
-        return '- "cufParams": Liste d\'objets [{"param": "nom", "value": "valeur", "description": "desc"}]';
-      case 'oracle_tables':
-        return '- "oracleTables": Liste de noms de tables Oracle (ex: ["AP_INVOICES", "GL_JE_HEADERS"])';
-      case 'integrations':
-        return '- "oicsIntegrations": Liste d\'intégrations (ex: ["FBDI_AP_INVOICES", "REST_GL_JOURNALS"])';
-      case 'technical_specs':
-        return '- "technicalSpecs": Détails techniques clés';
-      case 'business_rules':
-        return '- "businessRules": Règles métier identifiées';
-      case 'api_endpoints':
-        return '- "apiEndpoints": Liste des endpoints API trouvés';
-      default:
-        return `- "${field}": Informations pertinentes pour ce champ`;
+Structure JSON attendue:
+{
+  "component_id": "Identifiant du composant (ex: AP015, 0549, GL018)",
+  "component_name": "Nom descriptif du composant",
+  "doc_type": "${docType}",
+  "summary": "Résumé exécutif en 2-3 phrases",
+  "keywords": ["liste", "de", "mots-clés", "techniques"],
+
+  "aspects": {
+    "Oracle ERP Cloud": {
+      "detected": true/false,
+      "module": "Nom du module (GL, AP, AR, etc.)",
+      "cufParams": [{"param": "nom", "value": "valeur", "description": "desc"}],
+      "oracleTables": ["AP_INVOICES", "GL_JE_HEADERS"],
+      "oicsIntegrations": ["FBDI_AP_INVOICES", "REST_GL_JOURNALS"],
+      "notes": "Notes spécifiques Oracle"
+    },
+
+    "BI Publisher": {
+      "detected": true/false,
+      "reports": [{"name": "Nom rapport", "type": "RTF/PDF", "description": "Description"}],
+      "dataModels": [{"name": "Nom", "query": "SQL/Requête", "description": "Description"}],
+      "parameters": [{"name": "Nom", "type": "Type", "defaultValue": "Valeur"}],
+      "notes": "Notes spécifiques BI Publisher"
+    },
+
+    "ETL / Informatica / ODI": {
+      "detected": true/false,
+      "tool": "Informatica / ODI / OIC / Autre",
+      "mappings": [{"name": "Nom mapping", "source": "Source", "target": "Target", "description": "Description"}],
+      "transformations": [{"name": "Nom", "type": "Type", "description": "Description"}],
+      "schedules": [{"name": "Nom", "frequency": "Fréquence", "description": "Description"}],
+      "notes": "Notes spécifiques ETL"
+    },
+
+    "SaaS / JDV": {
+      "detected": true/false,
+      "platform": "Nom plateforme",
+      "configurations": [{"parameter": "Nom", "value": "Valeur", "description": "Description"}],
+      "notes": "Notes spécifiques SaaS"
+    },
+
+    "Tradeshift": {
+      "detected": true/false,
+      "apiEndpoints": [{"endpoint": "URL", "method": "GET/POST", "description": "Description"}],
+      "workflows": [{"name": "Nom", "steps": "Étapes", "description": "Description"}],
+      "notes": "Notes spécifiques Tradeshift"
+    },
+
+    "C2FO": {
+      "detected": true/false,
+      "integrationPoints": [{"name": "Nom", "type": "Type", "description": "Description"}],
+      "notes": "Notes spécifiques C2FO"
+    },
+
+    "IBM Cotre / Cognos": {
+      "detected": true/false,
+      "components": [{"name": "Nom", "type": "Type", "description": "Description"}],
+      "notes": "Notes spécifiques IBM"
+    },
+
+    "RBM-NRM": {
+      "detected": true/false,
+      "businessRules": [{"rule": "Nom", "description": "Description"}],
+      "dataModels": [{"name": "Nom", "description": "Description"}],
+      "notes": "Notes spécifiques RBM"
+    },
+
+    "Delphes-OeBS": {
+      "detected": true/false,
+      "migrationNotes": "Notes de migration",
+      "technicalSpecs": [{"spec": "Nom", "description": "Description"}],
+      "notes": "Notes spécifiques Delphes"
     }
-  }).join('\n');
+  }
+}
 
-  return basePrompt + '\n' + specificFields + '\n\nReste factuel et extrait uniquement ce qui est explicitement mentionné dans le document.';
+INSTRUCTIONS:
+1. Pour chaque aspect, mets "detected": true UNIQUEMENT si le document mentionne explicitement cet aspect
+2. Si "detected": false, tu peux omettre les autres champs de cet aspect
+3. Extrait TOUTES les informations techniques pertinentes pour chaque aspect détecté
+4. Sois factuel : n'invente rien, extrait uniquement ce qui est explicitement mentionné
+5. Un même composant peut avoir plusieurs aspects (ex: AP015 peut avoir Oracle ERP + BI Publisher + ETL)
+`;
 }
 
 /**
@@ -106,7 +161,8 @@ export async function analyzeContent(text, filename) {
   const componentName = parsed.componentName;
   const linkedTo = parsed.linkedTo;
 
-  console.log(`🎯 Domaine détecté: ${domain} | Type: ${docType} | ID: ${componentId}`);
+  console.log(`🎯 Type: ${docType} | ID: ${componentId}`);
+  console.log(`🔍 Analyse multi-aspect en cours...`);
 
   const model = genAI.getGenerativeModel({
     model: 'gemini-1.5-flash',
@@ -116,7 +172,7 @@ export async function analyzeContent(text, filename) {
     }
   });
 
-  const prompt = buildGeminiPrompt(domain, docType, filename);
+  const prompt = buildMultiAspectPrompt(docType, filename);
 
   // Limite le texte à ~500k caractères pour rester dans les limites de Gemini
   const safeText = text.substring(0, 500000);
@@ -144,6 +200,17 @@ export async function analyzeContent(text, filename) {
       analysis.linkedTo = linkedTo;
     }
 
+    // Compte et affiche les aspects détectés
+    if (analysis.aspects) {
+      const detectedAspects = Object.entries(analysis.aspects)
+        .filter(([name, data]) => data.detected)
+        .map(([name]) => name);
+
+      if (detectedAspects.length > 0) {
+        console.log(`✨ Aspects détectés: ${detectedAspects.join(', ')}`);
+      }
+    }
+
     return analysis;
   } catch (error) {
     console.error(`❌ Erreur Gemini:`, error.message);
@@ -153,13 +220,9 @@ export async function analyzeContent(text, filename) {
       component_id: componentId,
       component_name: componentName || path.basename(filename, path.extname(filename)),
       doc_type: docType,
-      domain: domain,
-      module: domain,
       summary: 'Analyse automatique impossible - document indexé avec métadonnées minimales',
       keywords: [],
-      cufParams: [],
-      oracleTables: [],
-      oicsIntegrations: [],
+      aspects: {},
       linkedTo: linkedTo || null,
       error: error.message
     };
