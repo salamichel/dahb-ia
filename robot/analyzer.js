@@ -135,6 +135,39 @@ INSTRUCTIONS:
 }
 
 /**
+ * Cherche un identifiant de module Oracle dans le texte (AP018, AR123, GL001, FND055, etc.)
+ * Retourne l'ID le plus probable ou null
+ */
+function findOracleModuleId(text) {
+  // Patterns de modules Oracle courants
+  const modulePatterns = [
+    /\b(AP|AR|GL|PO|OM|FA|CM|PPM|HCM|PA|INV|BOM|WIP|FND|CE|JE|ZX|XLA|IGC|OKC|OKE|OKL|OKS|CST|GMF|HR|PER|BEN|PAY|TCA|HZ|OE|ONT|WSH|ZXV)\s*[-_]?\s*(\d{3,4})\b/gi,
+    /\bcomposant\s+(AP|AR|GL|PO|OM|FA|CM|PPM|HCM|PA|INV|BOM|WIP|FND|CE|JE|ZX|XLA|IGC|OKC|OKE|OKL|OKS|CST|GMF|HR|PER|BEN|PAY|TCA|HZ|OE|ONT|WSH|ZXV)\s*[-_]?\s*(\d{3,4})/gi,
+    /\b(AP|AR|GL|PO|OM|FA|CM|PPM|HCM|PA|INV|BOM|WIP|FND|CE|JE|ZX|XLA|IGC|OKC|OKE|OKL|OKS|CST|GMF|HR|PER|BEN|PAY|TCA|HZ|OE|ONT|WSH|ZXV)(\d{3,4})\b/gi
+  ];
+
+  const matches = [];
+  for (const pattern of modulePatterns) {
+    const found = [...text.matchAll(pattern)];
+    found.forEach(match => {
+      const module = match[1]?.toUpperCase();
+      const number = match[2] || match[match.length - 1];
+      if (module && number) {
+        matches.push({ id: `${module}${number}`, position: match.index });
+      }
+    });
+  }
+
+  // Retourne le premier match trouvé (le plus tôt dans le document)
+  if (matches.length > 0) {
+    matches.sort((a, b) => a.position - b.position);
+    return matches[0].id;
+  }
+
+  return null;
+}
+
+/**
  * Analyse le contenu avec Gemini de manière adaptative
  * Utilise le système de patterns configurables (naming-patterns.json)
  */
@@ -165,7 +198,21 @@ export async function analyzeContent(text, filename) {
     console.log(`   🔍 Type détecté par mots-clés: ${docType}`);
   }
 
-  const componentId = parsed.componentId;
+  // Cherche un ID de module Oracle dans le contenu (AP018, GL123, etc.)
+  let componentId = parsed.componentId;
+  const oracleModuleId = findOracleModuleId(text);
+
+  if (oracleModuleId) {
+    // Si un module Oracle est trouvé ET que l'ID parsé est un simple numéro (007, 0564, etc.)
+    // alors on utilise le module Oracle
+    if (/^\d+$/.test(componentId)) {
+      console.log(`   🎯 Module Oracle détecté dans le contenu: ${oracleModuleId} (remplace ${componentId})`);
+      componentId = oracleModuleId;
+    } else {
+      console.log(`   ℹ️  Module Oracle trouvé: ${oracleModuleId} (ID conservé: ${componentId})`);
+    }
+  }
+
   const componentName = parsed.componentName;
   const linkedTo = parsed.linkedTo;
 
@@ -213,23 +260,52 @@ export async function analyzeContent(text, filename) {
     try {
       analysis = JSON.parse(cleanedResponse);
     } catch (parseError) {
-      // Si le parsing échoue, essaye de nettoyer les virgules en trop et les trailing commas
+      // Si le parsing échoue, essaye de nettoyer et réparer le JSON
       console.warn(`⚠️  JSON malformé, tentative de réparation...`);
+      console.warn(`   Erreur initiale: ${parseError.message}`);
 
-      // Enlève les trailing commas
-      const fixedJson = cleanedResponse
-        .replace(/,\s*}/g, '}')  // Virgule avant }
-        .replace(/,\s*]/g, ']')  // Virgule avant ]
-        .replace(/\n/g, ' ')     // Remplace les retours à la ligne
-        .replace(/\r/g, '');     // Remplace les retours chariot
+      // Nettoyage agressif du JSON
+      let fixedJson = cleanedResponse
+        // Enlève les trailing commas
+        .replace(/,(\s*[}\]])/g, '$1')
+        // Remplace les guillemets simples par des doubles (sauf dans les valeurs)
+        .replace(/'/g, '"')
+        // Remplace les retours à la ligne dans les valeurs de chaînes par des espaces
+        .replace(/:\s*"([^"]*)\n([^"]*)"/g, (match, p1, p2) => `: "${p1} ${p2}"`)
+        // Enlève les retours chariot
+        .replace(/\r/g, '')
+        // Remplace les multiples espaces par un seul
+        .replace(/\s+/g, ' ')
+        // Enlève les espaces avant/après les : et ,
+        .replace(/\s*:\s*/g, ':')
+        .replace(/\s*,\s*/g, ',')
+        // Corrige les virgules manquantes entre éléments de tableau
+        .replace(/}(\s*){/g, '},{')
+        .replace(/](\s*)\[/g, '],[');
 
       try {
         analysis = JSON.parse(fixedJson);
         console.log(`✅ JSON réparé avec succès`);
       } catch (secondError) {
         console.error(`❌ Impossible de parser le JSON même après nettoyage`);
-        console.error(`Position de l'erreur: ${secondError.message}`);
-        console.error(`Extrait du JSON: ${cleanedResponse.substring(0, 500)}...`);
+        console.error(`   Position de l'erreur: ${secondError.message}`);
+
+        // Sauvegarde le JSON malformé pour debug
+        const debugPath = '/tmp/gemini-malformed.json';
+        try {
+          const fs = await import('fs-extra');
+          await fs.writeFile(debugPath, fixedJson);
+          console.error(`   JSON malformé sauvegardé: ${debugPath}`);
+        } catch (e) {
+          // Ignore si impossible de sauvegarder
+        }
+
+        console.error(`   Extrait du JSON (position ${parseError.message.match(/\d+/)?.[0] || '?'}):`);
+        const errorPos = parseInt(parseError.message.match(/\d+/)?.[0] || '0');
+        const start = Math.max(0, errorPos - 200);
+        const end = Math.min(cleanedResponse.length, errorPos + 200);
+        console.error(`   ...${cleanedResponse.substring(start, end)}...`);
+
         throw secondError;
       }
     }
